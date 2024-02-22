@@ -1,8 +1,7 @@
 import os
 import argparse
-import asyncio
 import requests
-import threading
+import shutil
 import peewee
 import wget
 import pandas as pd
@@ -29,12 +28,6 @@ parser.add_argument(
 
 args = parser.parse_args()
 
-# TODO: adding argparse
-# TODO: modifying database -> removing repeated data, adding save location
-# TODO: adding zipfile save
-# TODO: fixing problems with download files to separate locations
-# TODO: add Threading
-
 database_manager = DatabaseManager(
     database_name=local_settings.DATABASE['name'],
     user=local_settings.DATABASE['user'],
@@ -53,12 +46,12 @@ df = pd.DataFrame(columns=[
     'language',
     'size',
     'type',
+    'path',
 ])
 
 
 class ScrapedData(peewee.Model):
-    phrase = peewee.CharField(
-        max_length=200, null=False, verbose_name='Phrase')
+    phrase = peewee.CharField(max_length=200, null=False, verbose_name='Phrase')
     ID = peewee.CharField(max_length=20, null=False, verbose_name='ID')
     author = peewee.CharField(null=False, verbose_name='Author')
     title = peewee.CharField(null=False, verbose_name='Title')
@@ -68,14 +61,14 @@ class ScrapedData(peewee.Model):
     language = peewee.TextField(null=False, verbose_name='language')
     size = peewee.CharField(max_length=20, null=False, verbose_name='Size')
     type = peewee.CharField(max_length=20, null=False, verbose_name='Type')
+    path = peewee.CharField(max_length=250, null=False, verbose_name='path')
 
     class Meta:
         database = database_manager.db
 
 
-async def main():
+def main():
     try:
-
         counter = 1
         while True:
             url = f'https://libgen.is/search.php?req=/{args.phrase.replace(" ", "+")}&page={counter}'
@@ -94,9 +87,12 @@ async def main():
                         os.makedirs(main_path, exist_ok=True)
                     else:
                         pass
-                    await scrapper(tr, main_path)
+                    scrapper(tr, main_path)
                 else:
-                    print(f"there are no result for your search: {args.phrase}")
+                    if counter == 1:
+                        print(f'there are no result for your search: {args.phrase}')
+                    else:
+                        print(f'search is over ')
                     break
             else:
                 print(f"The site isn't responding {requests.status_codes}")
@@ -104,13 +100,15 @@ async def main():
             counter += 1
     except requests.exceptions.ConnectionError as error:
         print(f'Connection Error {error}')
-    except EOFError as error:
-        print(f'EOFError {error}')
     except AttributeError as error:
         print(f'Attribute Error {error}')
+    except EOFError as error:
+        print(f'EOFError {error}')
+    except OSError as error:
+        print(f'OSError {error}')
 
 
-async def scrapper(soup, temp_dir):
+def scrapper(soup, temp_dir):
     print('Scrapper started')
     global df
     data_scrape = []
@@ -127,7 +125,7 @@ async def scrapper(soup, temp_dir):
                     link = j.find('a').get('href')
                     temp_url = f'https://libgen.is/{link}'
 
-                    image_downloader(temp_url,temp_dir)
+                    image_downloader(temp_url, temp_dir)
                     continue
 
                 if m == 9:
@@ -145,6 +143,7 @@ async def scrapper(soup, temp_dir):
                 'language': data_scrape[6],
                 'size': data_scrape[7],
                 'type': data_scrape[8],
+                'path': temp_dir,
             }, ignore_index=True)
             data_scrape.clear()
 
@@ -203,26 +202,30 @@ def database_creator():
                 language=df.loc[k, 'language'],
                 size=df.loc[k, 'size'],
                 type=df.loc[k, 'type'],
+                path=df.loc[k, 'path'],
             )
 
 
 def export_data(model):
     if model == 'csv':
-        df.to_csv(str(os.getcwd()) + '.csv', index=False)
+        df.to_csv(f'{df.loc[0, "path"]}/.csv', index=False)
     elif model == 'json':
-        df.to_json(str(os.getcwd()) + '.json', index=False)
+        df.to_json(f'{df.loc[0, "path"]}/.json', index=False)
     elif model == 'xls':
-        df.to_excel(str(os.getcwd()) + '.xlsx', index=False)
+        df.to_excel(f'{df.loc[0, "path"]}/.xlsx', index=False)
 
 
 if __name__ == '__main__':
     try:
         database_manager.create_tables(models=[ScrapedData])
-        asyncio.run(main())
-        database_creator()
-        export_data(args.format)
+        main()
+        if not df.empty:
+            database_creator()
+            export_data(args.format)
+            shutil.make_archive(df.loc[0, 'path'] + '_file', 'zip', df.loc[0, 'path'])
+            print(df.loc[0, 'path'] + '_file')
     except peewee.OperationalError as e:
-        print('Error', e)
+        print(f'Error: {e}')
     finally:
         if database_manager.db:
             database_manager.db.close()
