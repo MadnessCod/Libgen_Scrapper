@@ -127,14 +127,14 @@ async def scrapper(soup, temp_dir):
                     link = j.find('a').get('href')
                     temp_url = f'https://libgen.is/{link}'
 
-                    # image_downloader(temp_url, title, temp_dir)
+                    image_downloader(temp_url,temp_dir)
                     continue
 
                 if m == 9:
                     temp_url = j.find('a').get('href')
-                    # file_downloader(temp_url, data_scrape[2], temp_dir, data_scrape[8])
+                    file_downloader(temp_url, temp_dir)
                 data_scrape.append(j.text)
-            # print(data_scrape)
+
             df = df._append({
                 'ID': data_scrape[0],
                 'author': data_scrape[1],
@@ -156,41 +156,31 @@ async def scrapper(soup, temp_dir):
         print(f'Type error {error}')
 
 
-def image_downloader(link, title, base_dir):
-    invalid_chars = '\\/:*?"<>|'
+def image_downloader(link, base_dir):
     try:
         text = requests.get(link, timeout=10).text
         soup = BeautifulSoup(text, 'html.parser')
         tr = soup.find('table').find_all('tr')
         for i, j in enumerate(tr):
             if i == 1:
-                temp_path = (base_dir +
-                             f'\\{title.translate(str.maketrans(invalid_chars, len(invalid_chars) * "_"))}.jpeg')
-                if not os.path.exists(temp_path):
-                    os.makedirs(temp_path, exist_ok=True)
                 image_url = f"https://libgen.is/{j.find('a').find('img').get('src')}"
                 wget.download(
                     url=image_url,
-                    out=temp_path,
+                    out=base_dir,
                     bar=wget.bar_adaptive
                 )
-                # TODO: download the files as well
     except requests.exceptions.ConnectionError as error:
         print('error', error)
     except AttributeError as error:
         print(f'Attribute Error {error}')
 
 
-def file_downloader(link, title, base_dir, category):
-    invalid_chars = '\\/:*?"<>|'
+def file_downloader(link, base_dir):
     try:
         text = requests.get(link, timeout=10).text
         link_file = BeautifulSoup(text, 'html.parser').find('h2').find('a').get('href')
-        temp_path = base_dir + f'\\{title.translate(str.maketrans(invalid_chars, len(invalid_chars) * "_"))}.{category}'
-        if not os.path.exists(temp_path):
-            os.makedirs(temp_path, exist_ok=True)
         wget.download(link_file,
-                      out=temp_path,
+                      out=base_dir,
                       bar=wget.bar_adaptive
                       )
     except requests.exceptions.ConnectionError as error:
